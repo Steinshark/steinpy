@@ -686,6 +686,19 @@ class ChessDataset(Dataset):
 		return len(self.data)
 	
 
+class ChessDataset2(Dataset):
+
+	def __init__(self,experience_set):
+		self.data   = experience_set
+
+	
+	def __getitem__(self, i):
+		return self.data[i]
+
+	def __len__(self):
+		return len(self.data)
+
+
 class Model1(FullNet):
 
 	def __init__(self,optimizer=torch.optim.Adam,act_fn=torch.nn.ReLU,optimizer_kwargs={"lr":1e-3,"weight_decay":2.5e-4,},device=torch.device('cuda'if torch.cuda.is_available() else 'cpu')):
@@ -745,7 +758,7 @@ class Model1(FullNet):
 
 class ChessSmall(FullNet):
 	def __init__(self,
-	      optimizer=torch.optim.Adam,
+		  optimizer=torch.optim.Adam,
 		  act_fn=torch.nn.ReLU,
 		  optimizer_kwargs={"lr":1e-3,"weight_decay":2.5e-4,},
 		  device=torch.device('cuda'if torch.cuda.is_available() else 'cpu'),
@@ -956,3 +969,135 @@ class PolicyNetExp(FullNet):
 	def forward(self,x:torch.Tensor)->torch.Tensor:
 		return self.legal_learner(self.txfr_learner(x))
 	
+
+class ChessModel(torch.nn.Module):
+
+	def __init__(self,in_ch,n_convs=32):
+
+		super(ChessModel,self).__init__()
+
+		self.v_conv_n      = n_convs
+		self.h_conv_n      = n_convs
+		self.q_conv_n      = n_convs
+
+		self.conv_act       = torch.nn.functional.leaky_relu
+		self.lin_act        = torch.nn.functional.relu
+		self.softmax        = torch.nn.functional.softmax
+
+		self.vert_conv1     = torch.nn.Conv2d(in_ch,self.v_conv_n,kernel_size=(8+8+1,1),stride=1,padding=(8,0))
+		self.horz_conv1     = torch.nn.Conv2d(in_ch,self.h_conv_n,kernel_size=(1,8+8+1),stride=1,padding=(0,8))
+		self.quad_conv1     = torch.nn.Conv2d(in_ch,self.q_conv_n,kernel_size=(7),stride=1,padding=3)
+
+		self.vert_conv2     = torch.nn.Conv2d(self.v_conv_n+self.h_conv_n+self.q_conv_n,self.v_conv_n,kernel_size=(8+8+1,1),stride=1,padding=(8,0))
+		self.horz_conv2     = torch.nn.Conv2d(self.v_conv_n+self.h_conv_n+self.q_conv_n,self.h_conv_n,kernel_size=(1,8+8+1),stride=1,padding=(0,8))
+		self.quad_conv2     = torch.nn.Conv2d(self.v_conv_n+self.h_conv_n+self.q_conv_n,self.q_conv_n,kernel_size=(7),stride=1,padding=3)
+
+		self.vert_conv3     = torch.nn.Conv2d(self.v_conv_n+self.h_conv_n+self.q_conv_n,self.v_conv_n,kernel_size=(8+8+1,1),stride=1,padding=(8,0))
+		self.horz_conv3     = torch.nn.Conv2d(self.v_conv_n+self.h_conv_n+self.q_conv_n,self.h_conv_n,kernel_size=(1,8+8+1),stride=1,padding=(0,8))
+		self.quad_conv3     = torch.nn.Conv2d(self.v_conv_n+self.h_conv_n+self.q_conv_n,self.q_conv_n,kernel_size=(7),stride=1,padding=3)
+
+		self.flatten        = torch.nn.Flatten()
+
+		self.linear1        = torch.nn.Linear(64*n_convs*3,1024)
+		self.linear2        = torch.nn.Linear(1024,256)
+		self.linear3        = torch.nn.Linear(256,1)
+
+			
+
+
+	def forward(self,x:torch.Tensor) -> torch.Tensor:
+		
+		#ITER1 Get vertical, horizontal, and square convolutions 
+		vert_convolutions1  = self.conv_act(self.vert_conv1(x))                                         #Out    = (32,8,8)
+		horz_convolutions1  = self.conv_act(self.horz_conv1(x))                                         #Out    = (32,8,8)
+		quad_convolutions1  = self.conv_act(self.quad_conv1(x))                                         #Out    = (32,8,8)
+		comb_convolutions1  = torch.cat([vert_convolutions1,horz_convolutions1,quad_convolutions1],dim=1)
+
+		vert_convolutions2  = self.conv_act(self.vert_conv2(comb_convolutions1))                        #Out    = (96,8,8)
+		horz_convolutions2  = self.conv_act(self.horz_conv2(comb_convolutions1))                        #Out    = (96,8,8)
+		quad_convolutions2  = self.conv_act(self.quad_conv2(comb_convolutions1))                        #Out    = (96,8,8)
+		comb_convolutions2  = torch.cat([vert_convolutions2,horz_convolutions2,quad_convolutions2],dim=1)
+
+		vert_convolutions3  = self.conv_act(self.vert_conv3(comb_convolutions2))                        #Out    = (96 ,8,8)
+		horz_convolutions3  = self.conv_act(self.horz_conv3(comb_convolutions2))                        #Out    = (96 ,8,8)
+		quad_convolutions3  = self.conv_act(self.quad_conv3(comb_convolutions2))                        #Out    = (96 ,8,8)
+		comb_convolutions3  = torch.cat([vert_convolutions3,horz_convolutions3,quad_convolutions3],dim=1)
+
+		x                   = self.flatten(comb_convolutions3)
+		x                   = self.lin_act(self.linear1(x))
+		x                   = self.lin_act(self.linear2(x))
+		x                   = self.linear3(x)
+		
+
+
+		return x     
+
+class ChessModel2(torch.nn.Module):
+
+	def __init__(self,in_ch,n_convs=16):
+
+		super(ChessModel2,self).__init__()
+
+		self.v_conv_n      = n_convs
+		self.h_conv_n      = n_convs
+		self.q_conv_n      = n_convs
+
+		self.conv_act       = torch.nn.functional.leaky_relu
+		self.lin_act        = torch.nn.functional.leaky_relu
+		self.softmax        = torch.nn.functional.softmax
+
+		self.vert_conv1     = torch.nn.Conv2d(in_ch,self.v_conv_n,kernel_size=(8+8+1,1),stride=1,padding=(8,0))
+		self.horz_conv1     = torch.nn.Conv2d(in_ch,self.h_conv_n,kernel_size=(1,8+8+1),stride=1,padding=(0,8))
+		self.quad_conv1     = torch.nn.Conv2d(in_ch,self.q_conv_n,kernel_size=(7),stride=1,padding=3)
+
+		self.vert_conv2     = torch.nn.Conv2d(self.v_conv_n+self.h_conv_n+self.q_conv_n+in_ch,self.v_conv_n*2,kernel_size=(8+8+1,1),stride=1,padding=(8,0))
+		self.horz_conv2     = torch.nn.Conv2d(self.v_conv_n+self.h_conv_n+self.q_conv_n+in_ch,self.h_conv_n*2,kernel_size=(1,8+8+1),stride=1,padding=(0,8))
+		self.quad_conv2     = torch.nn.Conv2d(self.v_conv_n+self.h_conv_n+self.q_conv_n+in_ch,self.q_conv_n*2,kernel_size=(7),stride=1,padding=3)
+
+		self.vert_conv3     = torch.nn.Conv2d(in_ch+(self.v_conv_n+self.h_conv_n+self.q_conv_n)*2,self.v_conv_n*2,kernel_size=(8+8+1,1),stride=1,padding=(8,0))
+		self.horz_conv3     = torch.nn.Conv2d(in_ch+(self.v_conv_n+self.h_conv_n+self.q_conv_n)*2,self.h_conv_n*2,kernel_size=(1,8+8+1),stride=1,padding=(0,8))
+		self.quad_conv3     = torch.nn.Conv2d(in_ch+(self.v_conv_n+self.h_conv_n+self.q_conv_n)*2,self.q_conv_n*2,kernel_size=(7),stride=1,padding=3)
+
+		self.flatten        = torch.nn.Flatten()
+
+		self.linear1        = torch.nn.Linear(64*(n_convs*6+in_ch),2048)
+		self.drop1 			= torch.nn.Dropout(p=.5)
+
+		self.linear2        = torch.nn.Linear(2048,512)
+		self.drop2 			= torch.nn.Dropout(p=.1)
+
+		self.linear3        = torch.nn.Linear(512,1)
+
+
+		
+			
+
+
+	def forward(self,x:torch.Tensor) -> torch.Tensor:
+		
+		#ITER1 Get vertical, horizontal, and square convolutions 
+		vert_convolutions1  = self.conv_act(self.vert_conv1(x))                                         #Out    = (16,8,8)
+		horz_convolutions1  = self.conv_act(self.horz_conv1(x))                                         #Out    = (16,8,8)
+		quad_convolutions1  = self.conv_act(self.quad_conv1(x))                                         #Out    = (16,8,8)
+		comb_convolutions1  = torch.cat([vert_convolutions1,horz_convolutions1,quad_convolutions1,x],dim=1)
+
+		#ITER1 Cat vertical, horizontal, square, and original convolutions
+		vert_convolutions2  = self.conv_act(self.vert_conv2(comb_convolutions1))                        #Out    = (56,8,8)
+		horz_convolutions2  = self.conv_act(self.horz_conv2(comb_convolutions1))                        #Out    = (56,8,8)
+		quad_convolutions2  = self.conv_act(self.quad_conv2(comb_convolutions1))                        #Out    = (56,8,8)
+		comb_convolutions2  = torch.cat([vert_convolutions2,horz_convolutions2,quad_convolutions2,x],dim=1)
+
+		vert_convolutions3  = self.conv_act(self.vert_conv3(comb_convolutions2))                        #Out    = (96 ,8,8)
+		horz_convolutions3  = self.conv_act(self.horz_conv3(comb_convolutions2))                        #Out    = (96 ,8,8)
+		quad_convolutions3  = self.conv_act(self.quad_conv3(comb_convolutions2))                        #Out    = (96 ,8,8)
+		comb_convolutions3  = torch.cat([vert_convolutions3,horz_convolutions3,quad_convolutions3,x],dim=1)
+
+		x                   = self.flatten(comb_convolutions3)
+		x                   = self.drop1(self.lin_act(self.linear1(x)))
+		x                   = self.drop2(self.lin_act(self.linear2(x)))
+		x                   = self.linear3(x)
+		
+
+
+		return x     
+
