@@ -1,4 +1,4 @@
-a = open("c:/gitrepos/chessengine/outs.txt","r").readlines()
+a = open("c:/gitrepos/chess/out3.txt","r").readlines()
 total 	= 0 
 elp = [] 
 for item in a[1:]:
